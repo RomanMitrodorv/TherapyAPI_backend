@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Class1.cs" />
+    <Compile Remove="Enums\EmptyEnumeration.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="ViewModels\Request\SignInRequest.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="ViewModels\Superadmin\" />
+    <Folder Include="ViewModels\Superadmin\Request\" />
+    <Folder Include="ViewModels\Superadmin\Enums\" />
+    <Folder Include="ViewModels\Superadmin\Response\" />
+  </ItemGroup>
+</Project>
