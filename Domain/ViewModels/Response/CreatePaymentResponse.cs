@@ -3,6 +3,6 @@ namespace Domain.ViewModels.Response
 {
     public class CreatePaymentResponse : ResponseModel
     {
-        public string RedirectUrl { get; set; }
+        public Guid OrderId { get; set; }
     }
 }

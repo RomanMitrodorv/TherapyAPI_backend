@@ -5,6 +5,6 @@ namespace BusinessLogic.Interfaces
 {
     public interface IPaymentService : IBaseCrudService<Payment>
     {
-        Payment GetPaymentByOrderID(string orderID);
+        Payment GetPaymentByOrderID(Guid orderID);
     }
 }
