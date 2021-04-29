@@ -82,9 +82,9 @@ namespace TherapyAPI.Controllers
             });
         }
 
-        [HttpGet("success")]
+        [HttpPost("success")]
         [Authorize]
-        public IActionResult SuccessPayment([FromQuery] RegisterDOWebhook data)
+        public IActionResult SuccessPayment([FromBody] RegisterDOWebhook data)
         {
             var payment = PaymentService.GetPaymentByOrderID(data.OrderId);
 
@@ -116,12 +116,15 @@ namespace TherapyAPI.Controllers
                 SessionService.Update(session);
             }
 
-            return RedirectResult("profile?deposit=success");
+            return Ok(new SuccessPaymentResponse
+            {
+                RedirectUrl = $"{AppSettings.ClientAppUrl}/profile?deposit=success"
+            });
 
         }
 
 
-        [HttpGet("fail/{orderId}")]
+        [HttpPost("fail/{orderId}")]
         [Authorize]
         public IActionResult FailPayment(Guid orderId)
         {
@@ -132,7 +135,8 @@ namespace TherapyAPI.Controllers
 
             return BadRequest(new ResponseModel
             {
-                Success = false
+                Success = false,
+                Message = "Платеж отменен."
             });
 
         }

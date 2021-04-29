@@ -12,7 +12,7 @@ namespace BusinessLogic.Services
         {
         }
 
-        public Payment GetPaymentByOrderID(string orderID)
+        public Payment GetPaymentByOrderID(Guid orderID)
         {
             return GetAll().FirstOrDefault(x => x.OrderID == orderID);
         }
