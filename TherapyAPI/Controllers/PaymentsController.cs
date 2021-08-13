@@ -45,7 +45,7 @@ namespace TherapyAPI.Controllers
 
         [HttpPost]
         [Authorize]
-        public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest request)
+        public IActionResult CreatePayment([FromBody] CreatePaymentRequest request)
         {
             var user = UserService.Get(long.Parse(User.Identity.Name));
 
@@ -70,49 +70,29 @@ namespace TherapyAPI.Controllers
                 Wallet = wallet,
                 Amount = request.Amount,
                 Type = request.Type,
-                Status = PaymentStatus.New
+                Status = PaymentStatus.New,
+                OrderID = Guid.NewGuid()
             };
 
             PaymentService.Create(payment);
 
-            var paymentRequest = new RegisterDORequest($"user#{user.ID}deposit#{payment.ID}_{DateTime.UtcNow.Millisecond}", (payment.Amount * 100));
-
-            if (request.SessionID != 0)
-                paymentRequest.SetSessionID(request.SessionID);
-
-            var paymentResponse = await SberbankAPI.RegisterDO(paymentRequest);
-
-            if (paymentResponse.OrderId == null)
-            {
-                payment.Status = PaymentStatus.Canceled;
-                PaymentService.Update(payment);
-
-                return BadRequest(new ResponseModel
-                {
-                    Success = false,
-                    Message = $"{paymentResponse.ErrorMessage} Код ошибки: {paymentResponse.ErrorCode}"
-                });
-            }
-
-            payment.OrderID = paymentResponse.OrderId;
-            PaymentService.Update(payment);
-
             return Ok(new CreatePaymentResponse
             {
-                RedirectUrl = paymentResponse.FormUrl
+                OrderId = payment.OrderID
             });
         }
 
-        [HttpGet("success")]
-        public IActionResult SuccessPayment([FromQuery] RegisterDOWebhook data)
+        [HttpPost("success")]
+        [Authorize]
+        public IActionResult SuccessPayment([FromBody] RegisterDOWebhook data)
         {
             var payment = PaymentService.GetPaymentByOrderID(data.OrderId);
 
-            if (payment == null)
+            if (payment == null || payment.Status != PaymentStatus.New)
                 return NotFound(new ResponseModel
                 {
                     Success = false,
-                    Message = "Платеж не найден"
+                    Message = "Платеж не найден или закрыт"
                 });
 
             payment.Status = PaymentStatus.Completed;
@@ -120,7 +100,6 @@ namespace TherapyAPI.Controllers
 
             payment.Wallet.Balance += payment.Amount;
             UserWalletService.Update(payment.Wallet);
-
             if (data.SessionId != 0)
             {
                 var session = SessionService.Get(data.SessionId);
@@ -137,8 +116,29 @@ namespace TherapyAPI.Controllers
                 SessionService.Update(session);
             }
 
-            return RedirectResult("profile?deposit=success");
-                
+            return Ok(new SuccessPaymentResponse
+            {
+                RedirectUrl = $"{AppSettings.ClientAppUrl}/profile?deposit=success"
+            });
+
+        }
+
+
+        [HttpPost("fail/{orderId}")]
+        [Authorize]
+        public IActionResult FailPayment(Guid orderId)
+        {
+            var payment = PaymentService.GetPaymentByOrderID(orderId);
+
+            payment.Status = PaymentStatus.Canceled;
+            PaymentService.Update(payment);
+
+            return BadRequest(new ResponseModel
+            {
+                Success = false,
+                Message = "Платеж отменен."
+            });
+
         }
 
         [HttpGet("failUrl")]
