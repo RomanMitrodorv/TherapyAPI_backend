@@ -10,8 +10,11 @@ using Domain.ViewModels.Request;
 using Domain.ViewModels.Response;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using TherapyAPI.BackgroundServices;
 using Utils;
+using Utils.SberbankAcquiring;
+using Utils.SberbankAcquiring.Models.Request;
 
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
@@ -32,6 +35,9 @@ namespace TherapyAPI.Controllers
         private IProblemImageService ProblemImageService { get; set; }
         private IProblemResourceService ProblemResourceService { get; set; }
         private IProblemResourceTaskService ProblemResourceTaskService { get; set; }
+        private IUserWalletService UserWalletService { get; set; }
+        private IConfiguration Configuration { get; set; }
+        private IPaymentService PaymentService { get; set; }
 
         private SessionsTimerService SessionsTimerService { get; set; }
 
@@ -47,7 +53,10 @@ namespace TherapyAPI.Controllers
             IProblemImageService problemImageService,
             IProblemResourceService problemResourceService,
             IProblemResourceTaskService problemResourceTaskService,
-            SessionsTimerService sessionsTimerService)
+            IPaymentService paymentService,
+            SessionsTimerService sessionsTimerService,
+            IUserWalletService userWalletService,
+            IConfiguration configuration)
         {
             UserService = userService;
             ArticleLikeService = articleLikeService;
@@ -61,6 +70,10 @@ namespace TherapyAPI.Controllers
             ProblemResourceService = problemResourceService;
             ProblemResourceTaskService = problemResourceTaskService;
             SessionsTimerService = sessionsTimerService;
+            UserWalletService = userWalletService;
+            Configuration = configuration;
+            PaymentService = paymentService;
+
         }
 
         private SpecialistViewModel GetFullSpecialist(Specialist specialist)
@@ -548,6 +561,83 @@ namespace TherapyAPI.Controllers
                 }
             });
         }
+
+        [HttpPost]
+        public async Task<IActionResult> Withdraw([FromBody] RegisterDORequest req)
+        {
+            var user = UserService.Get(long.Parse(User.Identity.Name));
+            if (user == null)
+                return NotFound(new ResponseModel
+                {
+                    Success = false,
+                    Message = "Пользователь не найден"
+                });
+
+            var specialist = SpecialistService.GetSpecialistFromUser(user);
+            if (specialist == null)
+                return NotFound(new ResponseModel
+                {
+                    Success = false,
+                    Message = "Специалист не найден"
+                });
+            var wallet = UserWalletService.GetUserWallet(user);
+            if (wallet == null || wallet.Deleted)
+                return NotFound(new ResponseModel
+                {
+                    Success = false,
+                    Message = "Кошелек не найден"
+                });
+
+            if(wallet.Balance < req.Amount)
+                return BadRequest(new ResponseModel
+                {
+                    Success = false,
+                    Message = "Недостаточно средств"
+                });
+
+            var response = await CloudPaymentsAPI.Withdraw(req, Configuration["CloudPublicApi"], Configuration["CloudPassword"]);
+
+            if (!response.Success)
+                return StatusCode(403, response.Model.CardHolderMessage);
+
+            Guid paymentId = Guid.NewGuid();
+
+            var payment = new Payment
+            {
+                Wallet = wallet,
+                Amount = req.Amount,
+                Type = PaymentType.Withdrawal,
+                Status = PaymentStatus.New,
+                OrderID = paymentId
+            };
+
+            PaymentService.Create(payment);
+
+            var createdPayment = PaymentService.GetPaymentByOrderID(paymentId);
+
+            if (createdPayment == null || createdPayment.Status != PaymentStatus.New)
+                return NotFound(new ResponseModel
+                {
+                    Success = false,
+                    Message = "Платеж не найден или закрыт"
+                });
+
+            createdPayment.Status = PaymentStatus.Completed;
+            PaymentService.Update(createdPayment);
+             
+            createdPayment.Wallet.Balance -= payment.Amount;
+            UserWalletService.Update(createdPayment.Wallet);
+
+            return Ok();
+        }
+
+        [HttpPost]
+        public IActionResult Check(CheckRequest req)
+        {
+            return Ok(new CheckResponse() { code = 0 });
+
+        }
+
 
         [HttpPost("clients/{clientID}/problems/{problemID}/images")]
         public IActionResult CreateClientProblemImage([FromBody] CreateUpdateProblemImageRequest request, long clientID, long problemID)
